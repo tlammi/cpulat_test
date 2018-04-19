@@ -5,6 +5,9 @@
 
 #define BILLION 1000000000
 
+/**
+ * \brief Register start time to latency struct
+*/
 void setstarttime(struct latency* lat){
     int retval = clock_gettime(LATENCY_CLOCK, &lat->start);
     if(retval){
@@ -14,6 +17,9 @@ void setstarttime(struct latency* lat){
 	}
 }
 
+/**
+ * \brief Register stop time for latency struct
+*/
 void setstoptime(struct latency* lat){
     int retval = clock_gettime(LATENCY_CLOCK, &lat->stop);
     if(retval){
@@ -76,7 +82,9 @@ static inline int subtract_timespec(struct timespec* res,
 }
 
 
-
+/**
+ * \brief Calculates and stores latency
+*/
 int calcdiff(struct latency* lat){
 	return subtract_timespec(&lat->diff, &lat->stop, &lat->start);
 }

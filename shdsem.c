@@ -16,7 +16,7 @@ sem_t* shdsem_register(const char* name){
         if(errno == EEXIST){
 			ret_sem = sem_open(name, OPEN_FLAGS_ALT);
 			if(ret_sem == SEM_FAILED) goto error;
-			
+
 		}
 		else goto error;
 	}
@@ -32,6 +32,9 @@ int shdsem_unregister(sem_t* shdsem){
     return sem_close(shdsem);
 }
 
+int shdsem_unlink(const char* sem_name){
+    return sem_unlink(sem_name);
+}
 
 int shdsem_post(sem_t* shdsem){
 	return sem_post(shdsem);
@@ -40,4 +43,9 @@ int shdsem_wait(sem_t* shdsem){
 
 	return sem_wait(shdsem);
 
+}
+
+
+int shdsem_trywait(sem_t* shdsem){
+  return sem_trywait(shdsem);
 }
