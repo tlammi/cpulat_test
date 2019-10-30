@@ -27,7 +27,7 @@ sem_t* gstom_sem;
 sem_t* gctrl_sem;
 
 // Child process pids
-pid_t gchild_pids[SLAVE_COUNT-1];
+pid_t gchild_pids[MAX_SLAVE_COUNT-1];
 // Slave id used by process
 char* gslave_id;
 

@@ -4,67 +4,80 @@
 MASTER_BIN="./master"
 SLAVE_BIN="./slave"
 
-# IPC semaphores
-MTOS_SEM_PREFIX="/mtos"
-STOM_SEM_NAME="/stom"
-# Number of measurements
-MEAS_COUNT="10000"
 
 # Log file
 LOG_FILE_native="native.txt"
 LOG_FILE_one_cont="one_container.txt"
-LOG_FILE_two_cont="two_containers.txt"
 LOG_FILE_three_cont="three_containers.txt"
 
+LOG_FILE_postfix=".txt"
 
-DOCKER_FLAGS="--ipc=host"
-DOCKER_LATENCY_TEST_IMAGE="latency_test:latest"
-DOCKER_ENTRY_POINT="container_entry_point.sh"
-
-declare -a SLAVE_IDS=("0" "1" "2")
-declare -a SLAVE_PIDS=()
+LOG_FILE_native_prefix="native"
+LOG_FILE_single_prefix="cont_single"
+LOG_FILE_ind_prefix="cont_ind"
 
 
-# Execute tests natively
-echo "Executing native tests"
+# run -d --ipc=host --cap-add=sys_nice --ulimit rtprio=99 10.165.163.188:5000/latencytest:initial
+DOCKER_FLAGS="-d --ipc=host --cap-add=sys_nice --ulimit rtprio=99"
+DOCKER_LATENCY_TEST_IMAGE="10.165.163.188:5000/latencytest"
+DOCKER_ENTRY_POINT="/slave"
 
-echo "Spawning slaves"
+rmContainers() {
+    echo "Removing containers..."
+    docker rm $(docker ps -aq)
+    echo "Containers removed"
+}
 
-for id in "${SLAVE_IDS[@]}"
+execNative() {
+    ${SLAVE_BIN}  $(seq 1 "$1")&
+    sleep 2
+    ${MASTER_BIN} $(seq 1 "$1")> ${LOG_FILE_native_prefix}${1}${LOG_FILE_postfix}
+    sleep 2
+}
+
+execSingle() {
+    docker run ${DOCKER_FLAGS} ${DOCKER_LATENCY_TEST_IMAGE}\
+        ${DOCKER_ENTRY_POINT} $(seq 1 "$1")
+
+    ${MASTER_BIN} $(seq 1 "$1") > ${LOG_FILE_single_prefix}${1}${LOG_FILE_postfix}
+    sleep 10
+
+    rmContainers
+}
+
+execIndividual() {
+    for i in $(seq 1 "$1")
+    do
+        docker run ${DOCKER_FLAGS} ${DOCKER_LATENCY_TEST_IMAGE}\
+                        ${DOCKER_ENTRY_POINT} $i
+
+    done
+
+    ${MASTER_BIN} $(seq 1 "$1") > ${LOG_FILE_ind_prefix}${1}${LOG_FILE_postfix}
+    sleep 10
+
+    rmContainers
+
+}
+
+
+echo "Executing tests"
+
+for i in "$@"
 do
-	${SLAVE_BIN} ${MTOS_SEM_PREFIX}${id} ${STOM_SEM_NAME} &
-	SLAVE_PIDS+=("$!")
-	echo "Started slave, PID: $!"
-done
+    echo "Testing with $i slaves"
+    echo "Running native tests"
+    execNative $i
+    sleep 2
+    echo "Running test in single container"
+    execSingle $i
 
-echo "Starting master"
+    if [ "$i" -gt 1 ]
+    then
+        echo "Running test in individual containers"
+        execIndividual $i
 
-${MASTER_BIN} ${MTOS_SEM_PREFIX} ${STOM_SEM_NAME} ${MEAS_COUNT} > ${LOG_FILE_native}
-
-echo "Master finished. Output can be found from file ${LOG_FILE_native}"
-echo "Killing slaves"
-
-for id in "${SLAVE_PIDS[@]}"
-do
-	kill ${id}
-	echo "Killed ${id}"
+    fi
 done
 
 echo "Finished"
-
-
-
-#Execute tests in containers
-SLAVE_PIDS=()
-
-echo "Spawning slaves in one container"
-docker run ${DOCKER_FLAGS} ${DOCKER_LATENCY_TEST_IMAGE} ${DOCKER_ENTRY_POINT} \
-    0 2 ${MTOS_SEM_PREFIX} ${STOM_SEM_NAME}
-
-echo "Running master"
-${MASTER_BIN} ${MTOS_SEM_PREFIX} ${STOM_SEM_NAME} ${MEAS_COUNT} > ${LOG_FILE_one_cont}
-
-echo "Master finished. Output can be found from file ${LOG_FILE_one_cont}"
-
-docker kill \$(docker ps -aq)
-

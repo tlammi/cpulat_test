@@ -19,21 +19,25 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sched.h>
-
+#include <time.h>
 
 
 // Global variables
-struct latency glatencies[MEAS_COUNT];
-sem_t* gmtos_sems[SLAVE_COUNT];
+//struct latency glatencies[MEAS_COUNT];
+struct latency glatency;
+sem_t* gmtos_sems[MAX_SLAVE_COUNT];
 sem_t* gstom_sem;
 sem_t* gctrl_sem;
+const struct timespec LOOPDELAY_NS = {
+    .tv_sec=0,
+    .tv_nsec=10000
+};
 
-
-// Prototypes
 int init(int argc, char** argv){
 
-	if(argc != SLAVE_COUNT+1){
-		printf("Usage: %s <slave id 1> <slave id 2> <slave id 3>\n",argv[0]);
+	if(argc > MAX_SLAVE_COUNT+1){
+		printf("Usage: %s <slave id 1> [<slave id 2> "
+					 "[<slave id 3> ... [<slave id 100>]]]\n",argv[0]);
 		return -1;
 	}
 	struct sched_param param = {.sched_priority=99};
@@ -44,7 +48,7 @@ int init(int argc, char** argv){
 
 	// Register semaphores
   int i;
-  for(i=0;i<SLAVE_COUNT;++i){
+  for(i=0;i<argc-1;++i){
       char mtos_sem_name[32];
       sprintf(mtos_sem_name, "%s%s",MTOS_SEM_PREFIX, argv[i+1]);
       gmtos_sems[i] = shdsem_register(mtos_sem_name);
@@ -74,19 +78,17 @@ void do_log(const int exec_count, const struct latency* latencies){
 }
 
 
-void do_cleanup(char** argv){
+void do_cleanup(int argc, char** argv){
 	// Increment control semaphore to let slaves exit cleanly
-	shdsem_post(gctrl_sem);
-	shdsem_post(gctrl_sem);
-	shdsem_post(gctrl_sem);
-
+	int i;
+	for(i=0;i<argc-1;i++){
+		shdsem_post(gctrl_sem);
+	}
 	// Unlink semaphores and increment mtos_sems to let slaves cleanly exit
 	shdsem_unlink(CTRL_SEM_NAME);
 	shdsem_unlink(STOM_SEM_NAME);
 
-	int i;
-
-	for(i=0; i<SLAVE_COUNT; i++){
+	for(i=0; i<argc-1; i++){
 		char mtos_sem_name[32];
 		if(sprintf(mtos_sem_name, "%s%s", MTOS_SEM_PREFIX,argv[i+1]) < 0){
 			return;
@@ -94,7 +96,6 @@ void do_cleanup(char** argv){
 		shdsem_unlink(mtos_sem_name);
 		shdsem_post(gmtos_sems[i]);
 	}
-
 
 }
 
@@ -106,23 +107,38 @@ int main(int argc, char** argv){
 		exit(1);
 	}
 	int exec_count = MEAS_COUNT;
+
+    printf("Start Time\t\tStop Time\t\tDelta\n");
+
 	while(exec_count--){
 		// Store start time
-		setstarttime(&glatencies[MEAS_COUNT-exec_count-1]);
+		//setstarttime(&glatencies[MEAS_COUNT-exec_count-1]);
+        setstarttime(&glatency);
 		// Increment semaphore 3 times
-    shdsem_post(gmtos_sems[0]);
-    shdsem_post(gmtos_sems[1]);
-    shdsem_post(gmtos_sems[2]);
-		// Wait for another semaphore 3 times
-		shdsem_wait(gstom_sem);
-		shdsem_wait(gstom_sem);
-		shdsem_wait(gstom_sem);
+		int i=0;
+		for(i=0;i<argc-1;i++){
+    	shdsem_post(gmtos_sems[i]);
+		}
+		for(i=0;i<argc-1;i++){
+			shdsem_wait(gstom_sem);
+		}
 		// Store stop time
-		setstoptime(&glatencies[MEAS_COUNT-exec_count-1]);
-		calcdiff(&glatencies[MEAS_COUNT-exec_count-1]);
+		//setstoptime(&glatencies[MEAS_COUNT-exec_count-1]);
+        setstoptime(&glatency);
+		//calcdiff(&glatencies[MEAS_COUNT-exec_count-1]);
+        calcdiff(&glatency);
+        printf("%lu\t%ld\t%lu\t%ld\t%lu\t%ld\n",
+		  glatency.start.tv_sec,
+		  glatency.start.tv_nsec,
+		  glatency.stop.tv_sec,
+		  glatency.stop.tv_nsec,
+		  glatency.diff.tv_sec,
+		  glatency.diff.tv_nsec);
+        nanosleep(&LOOPDELAY_NS, NULL);
+
 	}
 
-	do_log(MEAS_COUNT, glatencies);
-	do_cleanup(argv);
+	//do_log(MEAS_COUNT, glatencies);
+	do_cleanup(argc, argv);
 
 }
